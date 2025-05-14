@@ -1,5 +1,7 @@
 import React, { useState, useEffect , useCallback} from "react";
 import { FaEdit, FaTrashAlt, FaPlus, FaSignOutAlt } from "react-icons/fa";
+import { GoSortAsc } from "react-icons/go";
+import { GoSortDesc } from "react-icons/go";
 import createMovieModel from "./MovieModel";
 import AuthService from "./AuthService";
 import "./Movie.css";
@@ -22,6 +24,11 @@ const Movie = ({ userRole, onLogout }) => {
   const [rating, setRating] = useState("");
   const [duration, setDuration] = useState("");
   const [actors, setActors] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const moviesPerPage = 10;
+  const [sortOrder, setSortOrder] = useState('asc');
+  //const [dateRange, setDateRange] = useState([new Date(), new Date()]);
+
 
 
 
@@ -30,6 +37,28 @@ const Movie = ({ userRole, onLogout }) => {
       setSearchResult(null);
     }
   }, [searchTitle]);
+
+  const handleSort = () => {
+  const sortedMovies = [...displayedMovies].sort((a, b) => {
+    const titleA = a.title.toLowerCase();
+    const titleB = b.title.toLowerCase();
+    if (titleA < titleB) return sortOrder === 'asc' ? -1 : 1;
+    if (titleA > titleB) return sortOrder === 'asc' ? 1 : -1;
+    return 0;
+  });
+  setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+  setMovies(sortedMovies);
+};
+
+// const handleDateChange = (range) => {
+//   setDateRange(range);
+//   const [startDate, endDate] = range;
+//   const filteredMovies = movies.filter(movie => {
+//     const releaseDate = new Date(movie.releasedDate);
+//     return releaseDate >= startDate && releaseDate <= endDate;
+//   });
+//   setMovies(filteredMovies);
+// };
 
   const fetchMovies = useCallback(async () => {
     try {
@@ -47,14 +76,15 @@ const Movie = ({ userRole, onLogout }) => {
      
       if (!Array.isArray(data)) throw new Error("Invalid data");
       setMovies(data.map(movie => createMovieModel(movie)));
+      setCurrentPage(1);
     } catch (err) {
       setError("Error fetching movies: " + err.message);
     }
-  }, [onLogout]); // All dependencies used in fetchMovies
+  }, [onLogout]); 
   
   useEffect(() => {
     fetchMovies();
-  }, [fetchMovies]); // Now stable between renders
+  }, [fetchMovies]); 
   
   useEffect(() => {
     fetchMovies();
@@ -179,17 +209,35 @@ const Movie = ({ userRole, onLogout }) => {
         return;
       }
 
-      if (!res.ok) return setSearchResult([]);
+      if (!res.ok) {
+  setSearchResult([]);
+  setCurrentPage(1);
+  return;
+}
 
       const data = await res.json();
       const movieArray = Array.isArray(data) ? data : [data];
       setSearchResult(movieArray.map(m => createMovieModel(m)));
+      setCurrentPage(1);
     } catch (err) {
       setSearchResult([]);
     }
   };
 
   const displayedMovies = searchResult !== null ? searchResult : movies;
+  const totalMovies = displayedMovies.length;
+  const totalPages = Math.ceil(totalMovies / moviesPerPage);
+  const indexOfLastMovie = currentPage * moviesPerPage;
+  const indexOfFirstMovie = indexOfLastMovie - moviesPerPage;
+  const currentMovies = displayedMovies.slice(indexOfFirstMovie, indexOfLastMovie);
+
+  useEffect(() => {
+  if (currentPage > totalPages) {
+    setCurrentPage(Math.max(totalPages, 1));
+  }
+}, [totalPages, currentPage]);
+
+
 
   return (
     <div className="mainContainer">
@@ -213,15 +261,44 @@ const Movie = ({ userRole, onLogout }) => {
         <FaPlus /> Add New Movie
       </button>
       <div className="searchcont">
-        <input
-          className="inputsearch"
-          type="search"
-          placeholder="Search Movie by Title"
-          value={searchTitle}
-          onChange={(e) => setSearchTitle(e.target.value)}
-        />
+        <div className="search-input-wrapper">
+  <input
+    className="inputsearch"
+    type="search"
+    placeholder="Search Movie by Title"
+    value={searchTitle}
+    onChange={(e) => setSearchTitle(e.target.value)}
+  />
+  {searchTitle && (
+    <button
+      className="clear-search"
+      onClick={() => {
+        setSearchTitle('');
+        setSearchResult(null);
+        setCurrentPage(1);
+      }}
+      aria-label="Clear search"
+    >
+      &times;
+    </button>
+  )}
+</div>
+
         <button className="formbutton" onClick={handleSearch}>Search</button>
+        <button className="sortbutton" onClick={handleSort}>
+        {sortOrder === 'asc' ? <GoSortAsc /> : <GoSortDesc />}
+      </button>
       </div>
+      
+
+      {/* <div className="date-range-picker-wrapper">
+        <DateRangePicker
+          onChange={handleDateChange}
+          ranges={[dateRange]}
+          moveRangeOnFirstSelection={false}
+        />
+      </div> */}
+
     </>
   )}
 </div>
@@ -240,7 +317,7 @@ const Movie = ({ userRole, onLogout }) => {
               <td colSpan={userRole === "Admin" ? "9" : "8"}><center>No movies found.</center></td>
             </tr>
           ) : (
-            displayedMovies.map(movie => (
+            currentMovies.map(movie => (
               <tr key={movie.movieCode}>
                 <td>{movie.movieCode}</td>
                 <td>{movie.title}</td>
@@ -258,6 +335,7 @@ const Movie = ({ userRole, onLogout }) => {
                       onClick={() => openModal(movie)} 
                     />
                     <FaTrashAlt 
+                      aria-label="delete movie"
                       className="icon-button" 
                       onClick={() => handleDelete(movie.movieCode)} 
                     />
@@ -268,6 +346,32 @@ const Movie = ({ userRole, onLogout }) => {
           )}
         </tbody>
       </table>
+      {totalPages > 1 && (
+  <div className="pagination">
+    <button
+      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+      disabled={currentPage === 1}
+    >
+      Previous
+    </button>
+    {[...Array(totalPages)].map((_, i) => (
+      <button
+        key={i + 1}
+        onClick={() => setCurrentPage(i + 1)}
+        className={currentPage === i + 1 ? "active" : ""}
+      >
+        {i + 1}
+      </button>
+    ))}
+    <button
+      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+      disabled={currentPage === totalPages}
+    >
+      Next
+    </button>
+  </div>
+)}
+
 
       {showModal && userRole === "Admin" &&(
         <div className="modal-overlay">
